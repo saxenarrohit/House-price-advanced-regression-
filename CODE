@@ -1,0 +1,122 @@
+# load packages
+import pandas as pd # data frames
+import numpy as np # arrays and computing
+import seaborn as sns # statistical data visualization
+import matplotlib
+
+import matplotlib.pyplot as plt # plots
+from scipy.stats import skew
+from scipy.stats.stats import pearsonr
+
+from scipy.stats import norm
+from scipy import stats
+
+from sklearn.linear_model import Ridge, RidgeCV, ElasticNet, LassoCV, LassoLarsCV, LinearRegression, ElasticNetCV
+from sklearn.model_selection import cross_val_score
+import xgboost as xgb
+
+%matplotlib inline
+
+# load data
+train = pd.read_csv("../input/train.csv")
+test = pd.read_csv("../input/test.csv")
+print(train.shape)
+print(test.shape)
+
+#check the data
+print(train.columns)
+train.head()
+
+#descriptive statistics summary
+train['SalePrice'].describe()
+
+train['YrSold'].describe()
+
+
+1.1. Model - Linear Regression with Ridge regularization
+
+Regularized linear regression with manual variation of the regularization parameter alpha, and a function calculating a cross-validation rmse error.
+
+
+def rmse_cv(model):
+    rmse= np.sqrt(-cross_val_score(model, X_train, y, scoring="neg_mean_squared_error", cv = 5))
+    return(rmse)
+
+
+# Linear Regression with Ridge regularization (L2 penalty)
+model_ridge = Ridge()
+
+
+alphas = [0.05, 0.1, 0.3, 1, 3, 5, 10, 15, 30, 50, 75]
+cv_ridge = [rmse_cv(Ridge(alpha = alpha)).mean() 
+            for alpha in alphas]
+
+
+cv_ridge = pd.Series(cv_ridge, index = alphas)
+cv_ridge.plot(title = "Validation")
+plt.xlabel("alpha")
+plt.ylabel("rmse")
+
+
+cv_ridge.min()
+The optimal value for alpha seems to be around 15 for the data in current form. Let’s take it for model training.
+
+
+# train model
+model_ridge = Ridge(alpha=15).fit(X_train, y)
+rmse_ridge = rmse_cv(model_ridge).mean()
+rmse_ridge
+
+#  Comparison of different Model
+
+
+# Linear Regression without regularization
+model_LinearRegr = LinearRegression()
+model_LinearRegr.fit(X_train, y)
+rmse_LinearRegr = rmse_cv(model_LinearRegr).mean()
+rmse_LinearRegr
+
+
+# RidgeCV built-in cross-validation. We keep default setting for the regularization parameter
+model_RidgeCV = RidgeCV()
+model_RidgeCV.fit(X_train, y)
+print("Best alpha :", model_RidgeCV.alpha_)
+rmse_RidgeCV = rmse_cv(model_RidgeCV).mean()
+rmse_RidgeCV
+
+
+# ElasticNetCV 
+model_EN = ElasticNetCV(l1_ratio = [0.5, 0.6, 0.7, 0.8, 0.9, 1],
+                            alphas = [0.0001, 0.0006, 0.001, 0.006, 0.01],
+                            max_iter = 10000, cv = 5)
+model_EN.fit(X_train, y)
+print("Best alpha :", model_EN.alpha_)
+print("Best l1_ratio :", model_EN.l1_ratio_)
+rmse_EN = rmse_cv(model_EN).mean()
+rmse_EN
+
+
+# LassoCV 
+model_LassoCV= LassoCV(alphas = [1, 0.1, 0.001, 0.0005], max_iter = 15000, cv = 5)
+model_LassoCV.fit(X_train, y)
+print("Best alpha :", model_LassoCV.alpha_)
+rmse_LassoCV = rmse_cv(model_LassoCV).mean()
+rmse_LassoCV
+
+
+# xgboost
+dtrain = xgb.DMatrix(X_train, label = y)
+dtest = xgb.DMatrix(X_test)
+
+params = {"max_depth":2, "eta":0.1}
+model = xgb.cv(params, dtrain,  num_boost_round=500, early_stopping_rounds=100)
+
+model_xgb = xgb.XGBRegressor(n_estimators=360, max_depth=2, learning_rate=0.1) #the params were tuned using xgb.cv
+model_xgb.fit(X_train, y)
+
+rmse_xgb = model.values[-1,0]
+rmse_xgb
+
+rmse_dict = {'data':[rmse_LassoCV, rmse_EN, rmse_ridge, rmse_RidgeCV, rmse_LinearRegr]}
+rmse_df = pd.DataFrame(data = rmse_dict, index = ['LassoCV','ElasticNetCV','Ridge','RidgeCV','Linear regression'])
+rmse_df.plot.bar(legend = False, title = 'RMSE (smaller is better)')
